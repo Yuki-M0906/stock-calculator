@@ -728,7 +728,7 @@
           <p>調べたい銘柄の証券コードを入力するだけで、<strong>「今の株価は割安か、割高か」</strong>を2つの角度から自動判定します。</p>
           <p>計算方法はマネックス証券「銘柄スカウター」と同じ方式を採用。Yahoo Finance からリアルタイムで財務データを取得して計算するため、インストール不要でHTMLファイルをブラウザで開くだけで使えます（日本株・米国株に対応）。</p>
           <div class="help-note">
-            インターネット接続が必要です。このページ（Claude.aiのプレビュー）では外部APIに接続できないため、一部銘柄のサンプルデータが表示されます。ローカルにHTMLファイルを保存してブラウザで開くとリアルタイムデータで動作します。
+            インターネット接続が必要です。
           </div>
         </div>
       </div>
@@ -1207,9 +1207,9 @@ function showError(msg) {
 // ===== 成長率推定 =====
 var _estData = null;   // 推定計算用データを保持
 
-// earningsHistory + incomeStatementHistory + earningsTrend を追加取得
+// earningsHistory + incomeStatementHistory + earningsTrend + earnings + financialData を取得
 async function fetchEarningsDetail(symbol) {
-  var modules = 'earningsHistory,incomeStatementHistory,earningsTrend';
+  var modules = 'earningsHistory,incomeStatementHistory,earningsTrend,earnings,financialData';
   var res = await fetch(yahooUrl('/v10/finance/quoteSummary/' + symbol + '?modules=' + modules), { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
@@ -1263,11 +1263,25 @@ function estimateGrowthRates(earningsData) {
   var annualEPS = [];
   if (ish && ish.length) {
     ish.forEach(function(s) {
-      // dilutedEps があれば使う
-      var eps = (s.dilutedEps && s.dilutedEps.raw) || null;
+      // dilutedEps > basicEps > netIncome の順にフォールバック
+      var eps = (s.dilutedEps && s.dilutedEps.raw) ||
+                (s.basicEps && s.basicEps.raw) || null;
       var endDate = s.endDate && s.endDate.raw ? new Date(s.endDate.raw * 1000) : null;
       if (eps != null && endDate) annualEPS.push({ year: endDate.getFullYear(), eps: eps });
     });
+  }
+
+  // --- フォールバック: earnings.financialsChart.yearly（年次純利益） ---
+  if (annualEPS.length < 2) {
+    var earningsModule = qs2.earnings;
+    if (earningsModule && earningsModule.financialsChart && earningsModule.financialsChart.yearly) {
+      earningsModule.financialsChart.yearly.forEach(function(y) {
+        var earn = y.earnings && y.earnings.raw;
+        if (earn != null && earn > 0 && y.date) {
+          annualEPS.push({ year: y.date, eps: earn });
+        }
+      });
+    }
   }
 
   // 3年CAGR
@@ -1303,6 +1317,33 @@ function estimateGrowthRates(earningsData) {
     if (result.cagr3 != null) result.cagr3Desc = '四半期実績データから推計';
   }
 
+  // --- フォールバック: earnings.earningsChart.quarterly からCAGR ---
+  if (result.cagr3 == null) {
+    var earningsModule2 = qs2.earnings;
+    if (earningsModule2 && earningsModule2.earningsChart && earningsModule2.earningsChart.quarterly) {
+      var qtrEPS = [];
+      earningsModule2.earningsChart.quarterly.forEach(function(q) {
+        var actual = q.actual && q.actual.raw;
+        if (actual != null && actual > 0 && q.date) {
+          // date is like "1Q2023" or "3Q2024"
+          var yearMatch = q.date.match(/(\d{4})/);
+          var qtrMatch = q.date.match(/^(\d)Q/);
+          if (yearMatch) {
+            var yr = parseInt(yearMatch[1]) + (qtrMatch ? (parseInt(qtrMatch[1]) - 1) * 0.25 : 0);
+            qtrEPS.push({ year: yr, eps: actual });
+          }
+        }
+      });
+      if (qtrEPS.length >= 4) {
+        var qr = epsListToCAGR(qtrEPS, 3);
+        if (qr != null) {
+          result.cagr3 = qr;
+          result.cagr3Desc = '四半期決算データから推計';
+        }
+      }
+    }
+  }
+
   // アナリスト予想成長率 (earningsTrend)
   var et = qs2.earningsTrend && qs2.earningsTrend.trend;
   if (et && et.length) {
@@ -1318,6 +1359,18 @@ function estimateGrowthRates(earningsData) {
     } else if (t1y != null) {
       result.analyst = t1y;
       result.analystDesc = 'アナリスト1年成長率予想（参考値）';
+    }
+  }
+
+  // --- フォールバック: financialData.earningsGrowth ---
+  if (result.analyst == null) {
+    var fd = qs2.financialData;
+    if (fd && fd.earningsGrowth && fd.earningsGrowth.raw != null) {
+      result.analyst = fd.earningsGrowth.raw;
+      result.analystDesc = '直近四半期の利益成長率（前年同期比）';
+    } else if (fd && fd.revenueGrowth && fd.revenueGrowth.raw != null) {
+      result.analyst = fd.revenueGrowth.raw;
+      result.analystDesc = '直近四半期の売上成長率（前年同期比・参考）';
     }
   }
 
