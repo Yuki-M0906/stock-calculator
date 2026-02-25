@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>理論株価 Calculator</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0d0d0d;
+    --surface:  #151515;
+    --surface2: #1c1c1c;
+    --border:   #2a2a2a;
+    --border2:  #333;
+    --text:     #e8e2d9;
+    --muted:    #666;
+    --dim:      #444;
+    --gold:     #c9a84c;
+    --gold-dim: #7a5e20;
+    --red:      #e05252;
+    --green:    #52a878;
+    --radius:   3px;
+    --font:     'Meiryo UI', 'Meiryo', 'Yu Gothic UI', 'MS PGothic', sans-serif;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ===== SHELL ===== */
+  .shell {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px 60px;
+  }
+
+  /* ===== NAV BAR ===== */
+  .nav-bar {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    border-bottom: 1px solid var(--border2);
+    margin-bottom: 36px;
+    padding-top: 32px;
+  }
+  .nav-logo {
+    font-size: 42px;
+    color: var(--gold);
+    font-weight: bold;
+    padding: 0 20px 20px 0;
+    border-right: 1px solid var(--border2);
+    line-height: 1;
+    display: flex;
+    align-items: flex-start;
+  }
+  .nav-titles {
+    padding: 0 24px 20px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+  .nav-titles h1 {
+    font-size: 22px;
+    font-weight: bold;
+    color: var(--text);
+    letter-spacing: 0.03em;
+  }
+  .nav-titles p {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+    letter-spacing: 0.05em;
+  }
+  .nav-tabs {
+    display: flex;
+    gap: 2px;
+    align-self: flex-end;
+  }
+  .nav-tab {
+    font-family: var(--font);
+    font-size: 12px;
+    padding: 8px 18px;
+    border: 1px solid var(--border2);
+    border-bottom: none;
+    border-radius: 3px 3px 0 0;
+    cursor: pointer;
+    color: var(--muted);
+    background: var(--surface2);
+    transition: background .15s, color .15s;
+    letter-spacing: 0.04em;
+  }
+  .nav-tab:hover { color: var(--text); background: var(--surface); }
+  .nav-tab.active {
+    color: var(--gold);
+    background: var(--bg);
+    border-color: var(--border2);
+    position: relative;
+    bottom: -1px;
+  }
+
+  /* ===== PAGES ===== */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ===== MAIN GRID ===== */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+
+  /* ===== INPUT PANEL ===== */
+  .input-panel {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    overflow: hidden;
+    position: sticky;
+    top: 24px;
+  }
+  .panel-header {
+    padding: 12px 18px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border2);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+  }
+  .panel-body {
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    letter-spacing: 0.05em;
+  }
+  .field input[type="text"],
+  .field input[type="number"] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 15px;
+    padding: 9px 12px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .field input:focus { border-color: var(--gold); }
+  .field small { display: block; margin-top: 5px; font-size: 11px; color: var(--dim); }
+
+  .slider-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .slider-row label { font-size: 11px; color: var(--muted); letter-spacing: 0.05em; }
+  .slider-val { font-size: 13px; color: var(--gold); font-weight: bold; }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%; height: 3px;
+    background: var(--border2);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--gold);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .toggle-row {
+    display: flex; align-items: center; gap: 10px;
+    cursor: pointer; user-select: none;
+  }
+  .toggle-row input[type="checkbox"] { display: none; }
+  .toggle {
+    width: 32px; height: 18px;
+    background: var(--border2);
+    border-radius: 9px;
+    position: relative;
+    transition: background .2s;
+    flex-shrink: 0;
+  }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 12px; height: 12px;
+    background: var(--muted);
+    border-radius: 50%;
+    transition: transform .2s, background .2s;
+  }
+  .toggle-row input:checked ~ .toggle { background: var(--gold-dim); }
+  .toggle-row input:checked ~ .toggle::after { transform: translateX(14px); background: var(--gold); }
+  .toggle-label { font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+  .extra-field { display: none; margin-top: 10px; }
+  .extra-field.show { display: block; }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+  .btn-calc {
+    width: 100%; padding: 12px;
+    background: var(--gold); color: var(--bg);
+    border: none; border-radius: var(--radius);
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: opacity .2s, transform .1s;
+  }
+  .btn-calc:hover { opacity: .85; }
+  .btn-calc:active { transform: scale(.98); }
+  .btn-calc:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* ===== RESULT PANEL ===== */
+  .result-panel { display: flex; flex-direction: column; gap: 16px; }
+
+  .empty-state {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    height: 360px;
+    border: 1px dashed var(--border2);
+    border-radius: var(--radius);
+    gap: 12px; color: var(--dim);
+  }
+  .empty-state .icon { font-size: 40px; filter: grayscale(1); }
+  .empty-state p { font-size: 11px; letter-spacing: 0.08em; }
+
+  .ticker-bar {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 14px 20px;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  }
+  .ticker-name { font-size: 17px; font-weight: bold; color: var(--text); }
+  .ticker-code { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .ticker-price-block { text-align: right; }
+  .ticker-price { font-size: 22px; font-weight: bold; color: var(--gold); }
+  .ticker-date { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .card-head {
+    padding: 11px 20px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border2);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .card-badge {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    padding: 3px 8px;
+    border-radius: 2px;
+    font-weight: bold;
+  }
+  .badge-gold { background: var(--gold-dim); color: var(--gold); }
+  .badge-red  { background: #3a1a1a; color: var(--red); }
+  .card-title { font-size: 11px; color: var(--muted); letter-spacing: 0.06em; }
+
+  .card-body { padding: 20px; }
+
+  .hero-price {
+    display: flex; align-items: baseline; gap: 12px;
+    margin-bottom: 18px; flex-wrap: wrap;
+  }
+  .hero-amount { font-size: 36px; font-weight: bold; color: var(--text); line-height: 1; }
+  .hero-unit { font-size: 14px; color: var(--muted); }
+  .hero-diff { font-size: 13px; padding: 3px 9px; border-radius: 2px; font-weight: bold; }
+  .diff-up   { background: #2a1010; color: var(--red); }
+  .diff-down { background: #0f2a1a; color: var(--green); }
+  .diff-flat { background: var(--surface2); color: var(--muted); }
+
+  .stats { display: flex; flex-direction: column; }
+  .stat-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 9px 0; border-bottom: 1px solid var(--border);
+  }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-label { font-size: 12px; color: var(--muted); }
+  .stat-val { font-size: 13px; font-weight: bold; }
+  .val-gold  { color: var(--gold); }
+  .val-red   { color: var(--red); }
+  .val-green { color: var(--green); }
+  .val-dim   { color: var(--dim); }
+
+  .toast {
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    font-size: 12px; line-height: 1.6;
+    display: none;
+  }
+  .toast.show { display: block; }
+  .toast.error { background: #2a0f0f; color: var(--red); border: 1px solid #4a1a1a; }
+  .toast.info  { background: var(--surface2); color: var(--muted); border: 1px solid var(--border2); }
+
+  .spinner {
+    display: none;
+    justify-content: center; align-items: center;
+    height: 120px; gap: 8px;
+    color: var(--muted); font-size: 12px;
+  }
+  .spinner.show { display: flex; }
+  .spin-dot {
+    width: 6px; height: 6px;
+    background: var(--gold); border-radius: 50%;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .spin-dot:nth-child(2) { animation-delay: .2s; }
+  .spin-dot:nth-child(3) { animation-delay: .4s; }
+  @keyframes pulse {
+    0%, 80%, 100% { opacity: .2; transform: scale(.8); }
+    40%           { opacity: 1;  transform: scale(1.2); }
+  }
+
+  /* ===== HELP PAGE ===== */
+  .help-wrap { display: flex; flex-direction: column; gap: 28px; }
+
+  .help-section {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .help-section-head {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border2);
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: bold;
+    color: var(--gold);
+    letter-spacing: 0.06em;
+  }
+  .help-section-body { padding: 20px 24px; }
+  .help-section-body p {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.8;
+    margin-bottom: 12px;
+  }
+  .help-section-body p:last-child { margin-bottom: 0; }
+
+  .help-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-top: 4px;
+  }
+  .help-table th {
+    background: var(--surface2);
+    color: var(--gold);
+    font-weight: bold;
+    padding: 9px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border2);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+  }
+  .help-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    line-height: 1.7;
+    vertical-align: top;
+  }
+  .help-table tr:last-child td { border-bottom: none; }
+  .help-table td:first-child {
+    color: var(--gold);
+    font-weight: bold;
+    white-space: nowrap;
+    width: 200px;
+  }
+
+  .help-formula {
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-left: 3px solid var(--gold);
+    border-radius: 2px;
+    padding: 14px 18px;
+    margin: 14px 0;
+    font-size: 13px;
+    line-height: 2.2;
+    color: var(--text);
+  }
+  .help-formula .f-label {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+  .help-formula .f-eq { color: var(--gold); font-weight: bold; font-size: 14px; }
+
+  .help-steps {
+    list-style: none;
+    counter-reset: step;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .help-steps li {
+    counter-increment: step;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text);
+  }
+  .help-steps li::before {
+    content: counter(step);
+    background: var(--gold-dim);
+    color: var(--gold);
+    font-weight: bold;
+    font-size: 12px;
+    min-width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .help-note {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.8;
+    margin-top: 12px;
+  }
+
+  .demo-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .demo-item {
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .demo-item .demo-code { color: var(--gold); font-weight: bold; }
+  .demo-item .demo-name { color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+  /* ===== GROWTH ESTIMATOR ===== */
+  .growth-est-wrap {
+    position: relative;
+  }
+  .btn-est {
+    width: 100%;
+    margin-top: 8px;
+    padding: 7px 10px;
+    background: var(--surface2);
+    color: var(--muted);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    font-family: var(--font);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+    text-align: center;
+  }
+  .btn-est:hover { color: var(--gold); border-color: var(--gold-dim); }
+  .btn-est:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* 推定結果ポップアップ */
+  .est-popup {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0; right: 0;
+    z-index: 100;
+    background: var(--surface);
+    border: 1px solid var(--gold-dim);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 24px rgba(0,0,0,.6);
+    overflow: hidden;
+  }
+  .est-popup.open { display: block; }
+  .est-popup-head {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border2);
+    padding: 10px 14px;
+    font-size: 11px;
+    color: var(--gold);
+    font-weight: bold;
+    letter-spacing: 0.06em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .est-popup-close {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+  }
+  .est-popup-close:hover { color: var(--text); }
+  .est-option {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background .1s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .est-option:last-child { border-bottom: none; }
+  .est-option:hover { background: var(--surface2); }
+  .est-option.unavailable { opacity: .4; cursor: not-allowed; }
+  .est-option.unavailable:hover { background: none; }
+  .est-opt-left { flex: 1; }
+  .est-opt-label {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+  }
+  .est-opt-desc {
+    font-size: 10px;
+    color: var(--dim);
+    line-height: 1.4;
+  }
+  .est-opt-val {
+    font-size: 15px;
+    font-weight: bold;
+    color: var(--gold);
+    white-space: nowrap;
+    min-width: 50px;
+    text-align: right;
+  }
+  .est-opt-val.na { font-size: 11px; color: var(--dim); }
+  .est-loading {
+    padding: 16px 14px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* ===== FOOTER ===== */
+  footer {
+    margin-top: 48px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--dim);
+    line-height: 1.8;
+  }
+
+  /* ===== RESPONSIVE ===== */
+  @media (max-width: 700px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .input-panel { position: static; }
+    .nav-bar { flex-wrap: wrap; }
+    .nav-tabs { width: 100%; }
+    .nav-tab { flex: 1; text-align: center; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- NAV BAR -->
+  <div class="nav-bar">
+    <div class="nav-logo">株</div>
+    <div class="nav-titles">
+      <h1>理論株価 Calculator</h1>
+      <p>PBR方式 + PER方式 / Powered by Yahoo Finance</p>
+    </div>
+    <div class="nav-tabs">
+      <button class="nav-tab active" id="tab-calc" onclick="switchPage('calc', this)">計算</button>
+      <button class="nav-tab" id="tab-help" onclick="switchPage('help', this)">使い方・ヘルプ</button>
+    </div>
+  </div>
+
+  <!-- CALC PAGE -->
+  <div class="page active" id="page-calc">
+    <div class="main-grid">
+
+      <aside class="input-panel">
+        <div class="panel-header">パラメータ設定</div>
+        <div class="panel-body">
+
+          <div class="field">
+            <label>証券コード</label>
+            <input type="text" id="code" value="7203" placeholder="7203 / AAPL / 9984.T">
+            <small>日本株は4桁コードを入力。自動的に .T を付加します</small>
+          </div>
+
+          <hr class="divider">
+
+          <div class="growth-est-wrap">
+            <div>
+              <div class="slider-row">
+                <label>EPS年間成長率</label>
+                <span class="slider-val" id="growth-val">8%</span>
+              </div>
+              <input type="range" id="growth" min="-10" max="40" step="1" value="8">
+            </div>
+            <button class="btn-est" id="est-btn" onclick="openEstimator()" disabled>成長率を推定... （先に計算してください）</button>
+            <div class="est-popup" id="est-popup">
+              <div class="est-popup-head">
+                <span>EPS成長率 推定値 — クリックで適用</span>
+                <button class="est-popup-close" onclick="closeEstimator()">&#x2715;</button>
+              </div>
+              <div id="est-popup-body">
+                <div class="est-loading">推定中...</div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="slider-row">
+              <label>予測年数</label>
+              <span class="slider-val" id="years-val">3年後</span>
+            </div>
+            <input type="range" id="years" min="1" max="10" step="1" value="3">
+          </div>
+
+          <hr class="divider">
+
+          <label class="toggle-row" for="custom-per-chk">
+            <input type="checkbox" id="custom-per-chk">
+            <span class="toggle"></span>
+            <span class="toggle-label">想定PERを手動入力</span>
+          </label>
+          <div class="extra-field" id="per-field">
+            <div class="field">
+              <label>想定PER（倍）</label>
+              <input type="number" id="custom-per" value="15" min="1" max="200" step="0.5">
+            </div>
+          </div>
+
+          <label class="toggle-row" for="custom-eps-chk">
+            <input type="checkbox" id="custom-eps-chk">
+            <span class="toggle"></span>
+            <span class="toggle-label">基準EPSを手動入力</span>
+          </label>
+          <div class="extra-field" id="eps-field">
+            <div class="field">
+              <label>基準EPS（円 / ドル）</label>
+              <input type="number" id="custom-eps" value="100" min="0.01" step="1">
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <button class="btn-calc" id="calc-btn">計算する</button>
+        </div>
+      </aside>
+
+      <main class="result-panel">
+        <div class="empty-state" id="empty-state">
+          <div class="icon">&#x1F4CA;</div>
+          <p>左パネルから証券コードを入力して計算してください</p>
+        </div>
+        <div class="spinner" id="spinner">
+          <div class="spin-dot"></div>
+          <div class="spin-dot"></div>
+          <div class="spin-dot"></div>
+          <span style="margin-left:8px">データ取得中...</span>
+        </div>
+        <div class="toast error" id="toast-error"></div>
+        <div id="results" style="display:none; flex-direction:column; gap:16px;"></div>
+      </main>
+
+    </div>
+  </div>
+
+  <!-- HELP PAGE -->
+  <div class="page" id="page-help">
+    <div class="help-wrap">
+
+      <!-- ===== このツールでできること ===== -->
+      <div class="help-section">
+        <div class="help-section-head">このツールでできること</div>
+        <div class="help-section-body">
+          <p>調べたい銘柄の証券コードを入力するだけで、<strong>「今の株価は割安か、割高か」</strong>を2つの角度から自動判定します。</p>
+          <p>計算方法はマネックス証券「銘柄スカウター」と同じ方式を採用。Yahoo Finance からリアルタイムで財務データを取得して計算するため、インストール不要でHTMLファイルをブラウザで開くだけで使えます（日本株・米国株に対応）。</p>
+          <div class="help-note">
+            インターネット接続が必要です。このページ（Claude.aiのプレビュー）では外部APIに接続できないため、一部銘柄のサンプルデータが表示されます。ローカルにHTMLファイルを保存してブラウザで開くとリアルタイムデータで動作します。
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 操作手順 ===== -->
+      <div class="help-section">
+        <div class="help-section-head">操作手順</div>
+        <div class="help-section-body">
+          <ol class="help-steps">
+            <li>
+              <div>
+                <strong>証券コードを入力する</strong><br>
+                日本株は4桁の数字（例：7203 = トヨタ）、米国株はティッカー（例：AAPL = Apple）を入力します。「.T」は自動付加されるので不要です。
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>「計算する」を押す</strong><br>
+                最初はこれだけでOKです。PBR基準・PER基準の理論株価が自動で表示されます。EPS成長率は暫定で8%がセットされた状態で計算されます。
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>成長率を推定して精度を上げる</strong><br>
+                計算後に「成長率を推定する」ボタンが有効になります。クリックすると過去実績や アナリスト予想から3種類の推定値が表示されます。気に入った値をクリックするとスライダーに自動セットされます。その後、再度「計算する」を押すと精度が上がります。
+              </div>
+            </li>
+            <li>
+              <div>
+                <strong>（任意）PER・EPSを手動で入力する</strong><br>
+                自分の業績見通しがある場合は、スイッチをONにして手動入力できます。自動取得より信頼できる数値がある場合に使います。
+              </div>
+            </li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- ===== PBR基準 ===== -->
+      <div class="help-section">
+        <div class="help-section-head">PBR基準カードの見方</div>
+        <div class="help-section-body">
+
+          <p><strong>PBR基準</strong>は「その銘柄が過去75日間、どのPBR水準で売買されてきたか」を統計的に分析して理論株価を出す手法です。PBR（株価純資産倍率）とは、株価が1株あたり純資産の何倍かを示す数字で、値が低いほど資産に対して株が安い状態です。</p>
+
+          <div class="help-formula">
+            <div class="f-label">計算のイメージ</div>
+            <div class="f-eq">理論株価 = BPS（純資産/株）x 過去75日のPBR平均</div>
+            <div class="f-eq">上値目途 = BPS x （PBR平均 + 2シグマ）　← 上昇余地の上限目安</div>
+            <div class="f-eq">下値目途 = BPS x （PBR平均 - 2シグマ）　← 下落リスクの下限目安</div>
+          </div>
+
+          <table class="help-table">
+            <tr><th>表示項目</th><th>読み方</th></tr>
+            <tr>
+              <td>大きい数字（理論株価）</td>
+              <td>カード上部に大きく表示される金額が「PBR基準の理論株価」です。隣にある <span style="color:var(--green)">緑の+%</span> は現在株価より割安、<span style="color:var(--red)">赤の-%</span> は割高を意味します。</td>
+            </tr>
+            <tr>
+              <td>上値目途（+2シグマ）</td>
+              <td>過去の値動きから見た「上がりすぎ」の目安。この価格に近づくと短期的に天井感が出やすい水準です。</td>
+            </tr>
+            <tr>
+              <td>下値目途（-2シグマ）</td>
+              <td>過去の値動きから見た「下がりすぎ」の目安。この価格に近づくと短期的に底値感が出やすい水準です。</td>
+            </tr>
+            <tr>
+              <td>BPS（1株純資産）</td>
+              <td>計算の土台となる数値。会社が解散したときに1株あたり戻ってくる純資産の理論値です。</td>
+            </tr>
+            <tr>
+              <td>現在PBR / 75日平均 / シグマ</td>
+              <td>今の株価のPBRが、過去75日の平均からどれだけ離れているかを確認できます。現在PBRが平均より大きく高ければ割高圏、大きく低ければ割安圏のシグナルです。</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- ===== PER基準 ===== -->
+      <div class="help-section">
+        <div class="help-section-head">PER基準カードの見方</div>
+        <div class="help-section-body">
+
+          <p><strong>PER基準</strong>は「将来の利益（EPS）を予測して、それに株価の倍率（PER）をかけて理論株価を出す」手法です。PBR基準が過去の値動きから算出するのに対し、PER基準は将来の業績見通しを反映できるのが特徴です。</p>
+
+          <div class="help-formula">
+            <div class="f-label">計算のイメージ</div>
+            <div class="f-eq">将来EPS = 今のEPS x （1 + 年間成長率） の N乗　← 複利で成長させる</div>
+            <div class="f-eq">理論株価 = 将来EPS x 想定PER</div>
+          </div>
+
+          <p>たとえば「EPS 500円、成長率10%、3年後、PER 15倍」なら、将来EPS = 500 x 1.1^3 = 665円、理論株価 = 665 x 15 = 約9,980円になります。</p>
+
+          <table class="help-table">
+            <tr><th>表示項目</th><th>読み方</th></tr>
+            <tr>
+              <td>大きい数字（理論株価）</td>
+              <td>カード上部に表示される「将来の理論株価」です。現在株価との比較が % で表示されます。</td>
+            </tr>
+            <tr>
+              <td>基準EPS</td>
+              <td>成長計算のスタート地点となる1株利益。自動で来期予想EPSを取得します。自分の見立てがある場合は手動入力スイッチでON。</td>
+            </tr>
+            <tr>
+              <td>成長率 x 年数</td>
+              <td>スライダーで設定した「年間成長率」と「予測年数」の組み合わせです。成長率が高いほど・年数が長いほど理論株価が高くなります。</td>
+            </tr>
+            <tr>
+              <td>予測EPS（N年後）</td>
+              <td>基準EPSに成長率を複利で積み上げた将来の利益予測。この数値が計算のキーになります。</td>
+            </tr>
+            <tr>
+              <td>想定PER</td>
+              <td>自動では実績PERと予想PERの平均を使います。業種や成長性に応じて手動で変えると精度が上がります（成長株なら高め、安定株なら低め）。</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- ===== 成長率推定 ===== -->
+      <div class="help-section">
+        <div class="help-section-head">EPS成長率の推定機能について</div>
+        <div class="help-section-body">
+          <p>「EPS成長率なんて分からない」という方のために、計算実行後に<strong>「成長率を推定する」</strong>ボタンが表示されます。財務データを自動分析して3種類の推定値を提示します。</p>
+
+          <table class="help-table">
+            <tr><th>推定方法</th><th>内容と特徴</th></tr>
+            <tr>
+              <td>過去3年 EPS CAGR</td>
+              <td>直近3年間の実績EPSの年平均成長率。「最近の実力値」を反映しやすいが、好不況の影響を受けやすい。景気敏感株などは数値がぶれることがある。</td>
+            </tr>
+            <tr>
+              <td>過去5年 EPS CAGR</td>
+              <td>直近5年間の実績EPSの年平均成長率。3年よりも長い期間を見るため、短期ノイズが平滑化されてより安定した傾向が見える。中長期投資の参考に向く。</td>
+            </tr>
+            <tr>
+              <td>アナリスト予想</td>
+              <td>証券アナリストが予想する将来の成長率の中央値。主に米国株で取得できることが多い。日本株は取得できない場合もある。将来の見通しを重視したい場合に参考にする。</td>
+            </tr>
+          </table>
+
+          <div class="help-note">
+            推定値はあくまで「過去の実績」や「アナリストの予想」に基づく参考値です。将来の成長を保証するものではありません。3つの数値を見比べながら、自分の見通しに合った値を選ぶか、スライダーで微調整して使うのがお勧めです。
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 結果の読み方まとめ ===== -->
+      <div class="help-section">
+        <div class="help-section-head">結果の読み方まとめ</div>
+        <div class="help-section-body">
+          <table class="help-table">
+            <tr><th>表示</th><th>意味</th></tr>
+            <tr>
+              <td style="color:var(--green)">+XX%（緑）</td>
+              <td>理論株価 ＞ 現在株価。現在の株価は計算上の適正水準より安い「割安」状態の可能性があります。</td>
+            </tr>
+            <tr>
+              <td style="color:var(--red)">-XX%（赤）</td>
+              <td>理論株価 ＜ 現在株価。現在の株価は計算上の適正水準より高い「割高」状態の可能性があります。</td>
+            </tr>
+            <tr>
+              <td>PBRとPERで結果が違う</td>
+              <td>よくあることです。PBRは過去の値動き基準、PERは将来の利益基準なので、見ている軸が異なります。両方の結果を参考にしながら総合的に判断するのが基本です。</td>
+            </tr>
+          </table>
+          <div class="help-note">
+            重要：理論株価は「この計算式に当てはめるとこうなる」という参考値です。実際の株価には需給・金利・センチメントなど無数の要因が影響するため、理論株価どおりに動く保証はありません。投資判断はご自身の責任で行ってください。
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== よくある質問 ===== -->
+      <div class="help-section">
+        <div class="help-section-head">よくある質問</div>
+        <div class="help-section-body">
+          <table class="help-table">
+            <tr><th>質問</th><th>回答</th></tr>
+            <tr>
+              <td>証券コードがわからない</td>
+              <td>日本株はYahoo!ファイナンスやマネックス証券のサイトで銘柄名を検索すると4桁コードを確認できます。米国株はティッカー記号（AAPL、MSFTなど）を入力してください。</td>
+            </tr>
+            <tr>
+              <td>PBR基準が表示されない</td>
+              <td>BPS（1株純資産）データが取得できなかった場合に発生します。特に米国株では取得できないことがあります。その場合はPER基準のみをご参照ください。</td>
+            </tr>
+            <tr>
+              <td>PER基準が表示されない</td>
+              <td>EPSデータが自動取得できなかった場合です。「基準EPSを手動入力」スイッチをONにして、決算短信などから1株利益を手入力してください。</td>
+            </tr>
+            <tr>
+              <td>「成長率を推定する」が使えない</td>
+              <td>オフライン（デモ）モードでは利用できません。ローカルのHTMLファイルをブラウザで開き、「計算する」を実行した後に有効になります。</td>
+            </tr>
+            <tr>
+              <td>成長率の推定値が3つとも「取得不可」</td>
+              <td>EPSの過去データがYahoo Finance上に存在しない銘柄は推定できません。スライダーを手動で調整するか、業績資料を参考に手動入力してください。</td>
+            </tr>
+            <tr>
+              <td>「DEMO」と表示されている</td>
+              <td>リアルタイムAPIに接続できない環境（プレビュー等）で、内蔵のサンプルデータを使って表示しています。参考値として確認できますが実際の株価・財務データとは異なります。</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- ===== デモ銘柄 ===== -->
+      <div class="help-section">
+        <div class="help-section-head">オフライン時に使えるデモ銘柄</div>
+        <div class="help-section-body">
+          <p>APIに接続できない環境では、下記の銘柄コードでサンプルデータを使ったデモ計算が可能です。</p>
+          <div class="demo-list">
+            <div class="demo-item"><div class="demo-code">7203</div><div class="demo-name">トヨタ自動車</div></div>
+            <div class="demo-item"><div class="demo-code">9984</div><div class="demo-name">ソフトバンクグループ</div></div>
+            <div class="demo-item"><div class="demo-code">6758</div><div class="demo-name">ソニーグループ</div></div>
+            <div class="demo-item"><div class="demo-code">6861</div><div class="demo-name">キーエンス</div></div>
+            <div class="demo-item"><div class="demo-code">8306</div><div class="demo-name">三菱UFJフィナンシャル</div></div>
+            <div class="demo-item"><div class="demo-code">AAPL</div><div class="demo-name">Apple Inc.</div></div>
+            <div class="demo-item"><div class="demo-code">MSFT</div><div class="demo-name">Microsoft Corp.</div></div>
+            <div class="demo-item"><div class="demo-code">NVDA</div><div class="demo-name">NVIDIA Corp.</div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <footer>
+    注意：本ツールは情報提供のみを目的としており、投資勧誘ではありません。投資判断はご自身の責任で行ってください。<br>
+    データソース：Yahoo Finance API / 理論株価の計算方式は銘柄スカウター方式に準拠
+  </footer>
+
+</div>
+
+<script>
+// ===== ページ切替 =====
+function switchPage(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ===== UI helpers =====
+const $ = id => document.getElementById(id);
+const fmt = (n, d) => {
+  d = d || 0;
+  if (n == null) return 'N/A';
+  return n.toLocaleString('ja-JP', {minimumFractionDigits: d, maximumFractionDigits: d});
+};
+const fmtPct = n => n == null ? '' : (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
+
+$('growth').addEventListener('input', function() { $('growth-val').textContent = this.value + '%'; });
+$('years').addEventListener('input',  function() { $('years-val').textContent  = this.value + '年後'; });
+$('custom-per-chk').addEventListener('change', function() { $('per-field').classList.toggle('show', this.checked); });
+$('custom-eps-chk').addEventListener('change', function() { $('eps-field').classList.toggle('show', this.checked); });
+$('code').addEventListener('keydown', function(e) { if (e.key === 'Enter') run(); });
+$('calc-btn').addEventListener('click', run);
+
+// ===== Yahoo Finance API =====
+function yahooUrl(path) {
+  return 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://query1.finance.yahoo.com' + path);
+}
+async function fetchChart(symbol) {
+  var res = await fetch(yahooUrl('/v8/finance/chart/' + symbol + '?interval=1d&range=6mo'), { signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+async function fetchQuote(symbol) {
+  var res = await fetch(yahooUrl('/v10/finance/quoteSummary/' + symbol + '?modules=price,defaultKeyStatistics,financialData,summaryDetail'), { signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+// ===== モックデータ =====
+var MOCK_DB = {
+  '7203.T': { name:'トヨタ自動車',         price:3450,  bps:3010,  eps:480,  trailingPE:10.2, forwardPE:9.8  },
+  '9984.T': { name:'ソフトバンクグループ', price:9200,  bps:4800,  eps:320,  trailingPE:28.7, forwardPE:24.1 },
+  '6758.T': { name:'ソニーグループ',       price:2980,  bps:2100,  eps:290,  trailingPE:17.5, forwardPE:15.2 },
+  '6861.T': { name:'キーエンス',           price:67000, bps:21000, eps:2200, trailingPE:30.2, forwardPE:27.8 },
+  '8306.T': { name:'三菱UFJフィナンシャル',price:1680,  bps:1420,  eps:185,  trailingPE:9.1,  forwardPE:8.4  },
+  'AAPL':   { name:'Apple Inc.',           price:225,   bps:4.2,   eps:6.57, trailingPE:34.3, forwardPE:29.8 },
+  'MSFT':   { name:'Microsoft Corp.',      price:415,   bps:38.2,  eps:12.1, trailingPE:34.2, forwardPE:30.1 },
+  'NVDA':   { name:'NVIDIA Corp.',         price:875,   bps:7.8,   eps:14.2, trailingPE:61.5, forwardPE:35.2 }
+};
+
+function generateMockCloses(price) {
+  var closes = [], p = price * (0.85 + Math.random() * 0.1);
+  for (var i = 0; i < 120; i++) {
+    p = p * (1 + (Math.random() - 0.495) * 0.018);
+    closes.push(parseFloat(p.toFixed(2)));
+  }
+  closes.push(price);
+  return closes;
+}
+
+function getMockData(symbol) {
+  var m = MOCK_DB[symbol];
+  if (!m) return null;
+  return { name: m.name, currentPrice: m.price, closes: generateMockCloses(m.price),
+           bps: m.bps, eps: m.eps, trailingPE: m.trailingPE, forwardPE: m.forwardPE };
+}
+
+// ===== 統計 =====
+function mean(arr) { return arr.reduce(function(a,b){ return a+b; }, 0) / arr.length; }
+function std(arr) {
+  var m = mean(arr);
+  return Math.sqrt(arr.reduce(function(a,b){ return a + (b-m)*(b-m); }, 0) / arr.length);
+}
+
+// ===== 計算 =====
+function calcPBR(closes, bps, currentPrice) {
+  var prices = closes.slice(-75);
+  var pbrs = prices.map(function(p){ return p / bps; });
+  var m = mean(pbrs), s = std(pbrs);
+  return {
+    theoretical: bps * m,
+    upper: bps * (m + 2*s),
+    lower: bps * Math.max(m - 2*s, 0),
+    pbr_mean: m, pbr_std: s,
+    current_pbr: currentPrice / bps,
+    days: prices.length, bps: bps, current: currentPrice
+  };
+}
+
+function calcPER(baseEPS, growthRate, years, targetPER, currentPrice) {
+  var myEPS = baseEPS * Math.pow(1 + growthRate, years);
+  return { baseEPS: baseEPS, growthRate: growthRate, years: years,
+           myEPS: myEPS, targetPER: targetPER,
+           theoretical: myEPS * targetPER, current: currentPrice };
+}
+
+// ===== 結果描画 =====
+function diffClass(pct) {
+  if (pct > 1)  return 'diff-down';
+  if (pct < -1) return 'diff-up';
+  return 'diff-flat';
+}
+
+function renderResults(name, symbol, currentPrice, pbr, per, usingMock) {
+  var r = $('results');
+  r.innerHTML = '';
+
+  if (usingMock) {
+    var b = document.createElement('div');
+    b.className = 'toast info show';
+    b.textContent = '[デモ] APIに接続できない環境のため、サンプルデータを表示しています。ローカルのHTMLファイルをブラウザで開くとリアルタイムデータを取得できます。';
+    r.appendChild(b);
+  }
+
+  // ティッカーバー
+  var bar = document.createElement('div');
+  bar.className = 'ticker-bar';
+  bar.innerHTML =
+    '<div>' +
+      '<div class="ticker-name">' + name + '</div>' +
+      '<div class="ticker-code">' + symbol + (usingMock ? ' - DEMO' : '') + '</div>' +
+    '</div>' +
+    '<div class="ticker-price-block">' +
+      '<div class="ticker-price">&#165;' + fmt(currentPrice, 1) + '</div>' +
+      '<div class="ticker-date">' + new Date().toLocaleDateString('ja-JP') + '</div>' +
+    '</div>';
+  r.appendChild(bar);
+
+  // PBRカード
+  if (pbr) {
+    var pct    = currentPrice ? (pbr.theoretical / currentPrice - 1) * 100 : null;
+    var pctUp  = currentPrice ? (pbr.upper        / currentPrice - 1) * 100 : null;
+    var pctLow = currentPrice ? (pbr.lower         / currentPrice - 1) * 100 : null;
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML =
+      '<div class="card-head">' +
+        '<span class="card-badge badge-gold">PBR基準</span>' +
+        '<span class="card-title">過去75日PBR統計バンド方式</span>' +
+      '</div>' +
+      '<div class="card-body">' +
+        '<div class="hero-price">' +
+          '<span class="hero-amount">&#165;' + fmt(pbr.theoretical, 0) + '</span>' +
+          '<span class="hero-unit">円</span>' +
+          (pct != null ? '<span class="hero-diff ' + diffClass(pct) + '">' + fmtPct(pct) + '</span>' : '') +
+        '</div>' +
+        '<div class="stats">' +
+          '<div class="stat-row"><span class="stat-label">上値目途（+2シグマ）</span>' +
+            '<span class="stat-val val-red">&#165;' + fmt(pbr.upper, 0) + '&nbsp;&nbsp;' + (pctUp!=null?fmtPct(pctUp):'') + '</span></div>' +
+          '<div class="stat-row"><span class="stat-label">理論株価（PBR平均）</span>' +
+            '<span class="stat-val val-gold">&#165;' + fmt(pbr.theoretical, 0) + '</span></div>' +
+          '<div class="stat-row"><span class="stat-label">下値目途（-2シグマ）</span>' +
+            '<span class="stat-val val-green">&#165;' + fmt(pbr.lower, 0) + '&nbsp;&nbsp;' + (pctLow!=null?fmtPct(pctLow):'') + '</span></div>' +
+          '<div class="stat-row"><span class="stat-label">BPS（1株純資産）</span>' +
+            '<span class="stat-val val-dim">&#165;' + fmt(pbr.bps, 2) + '</span></div>' +
+          '<div class="stat-row"><span class="stat-label">現在PBR / 75日平均 / シグマ</span>' +
+            '<span class="stat-val val-dim">' + pbr.current_pbr.toFixed(2) + 'x / ' + pbr.pbr_mean.toFixed(2) + 'x / +-' + pbr.pbr_std.toFixed(2) + '</span></div>' +
+          '<div class="stat-row"><span class="stat-label">参照日数</span>' +
+            '<span class="stat-val val-dim">' + pbr.days + ' 営業日</span></div>' +
+        '</div>' +
+      '</div>';
+    r.appendChild(card);
+  } else {
+    var w1 = document.createElement('div');
+    w1.className = 'toast info show';
+    w1.textContent = 'PBR基準：BPSデータを取得できませんでした（米国株は取得できない場合があります）';
+    r.appendChild(w1);
+  }
+
+  // PERカード
+  if (per) {
+    var pctP = per.current ? (per.theoretical / per.current - 1) * 100 : null;
+    var card2 = document.createElement('div');
+    card2.className = 'card';
+    card2.innerHTML =
+      '<div class="card-head">' +
+        '<span class="card-badge badge-red">PER基準</span>' +
+        '<span class="card-title">EPS複利成長 x 想定PER方式</span>' +
+      '</div>' +
+      '<div class="card-body">' +
+        '<div class="hero-price">' +
+          '<span class="hero-amount">&#165;' + fmt(per.theoretical, 0) + '</span>' +
+          '<span class="hero-unit">円</span>' +
+          (pctP != null ? '<span class="hero-diff ' + diffClass(pctP) + '">' + fmtPct(pctP) + '</span>' : '') +
+        '</div>' +
+        '<div class="stats">' +
+          '<div class="stat-row"><span class="stat-label">基準EPS</span>' +
+            '<span class="stat-val val-dim">&#165;' + fmt(per.baseEPS, 2) + '</span></div>' +
+          '<div class="stat-row"><span class="stat-label">成長率 x 年数</span>' +
+            '<span class="stat-val val-dim">' + (per.growthRate*100).toFixed(1) + '% x ' + per.years + '年後</span></div>' +
+          '<div class="stat-row"><span class="stat-label">予測EPS（' + per.years + '年後）</span>' +
+            '<span class="stat-val val-gold">&#165;' + fmt(per.myEPS, 2) + '</span></div>' +
+          '<div class="stat-row"><span class="stat-label">想定PER</span>' +
+            '<span class="stat-val val-dim">' + per.targetPER.toFixed(1) + ' 倍</span></div>' +
+          '<div class="stat-row"><span class="stat-label">理論株価</span>' +
+            '<span class="stat-val val-gold">&#165;' + fmt(per.theoretical, 0) + '</span></div>' +
+        '</div>' +
+      '</div>';
+    r.appendChild(card2);
+  } else {
+    var w2 = document.createElement('div');
+    w2.className = 'toast info show';
+    w2.textContent = 'PER基準：EPSデータを取得できませんでした。手動入力をONにして基準EPSを入力してください。';
+    r.appendChild(w2);
+  }
+
+  r.style.display = 'flex';
+}
+
+// ===== 表示制御 =====
+function showSpinner(v) {
+  $('spinner').classList.toggle('show', v);
+  $('empty-state').style.display = v ? 'none' : '';
+  if (v) { $('results').style.display = 'none'; $('toast-error').classList.remove('show'); }
+}
+function showError(msg) {
+  $('toast-error').textContent = msg;
+  $('toast-error').classList.add('show');
+  $('empty-state').style.display = 'none';
+  $('results').style.display = 'none';
+}
+
+// ===== 成長率推定 =====
+var _estData = null;   // 推定計算用データを保持
+
+// earningsHistory + incomeStatementHistory + earningsTrend を追加取得
+async function fetchEarningsDetail(symbol) {
+  var modules = 'earningsHistory,incomeStatementHistory,earningsTrend';
+  var res = await fetch(yahooUrl('/v10/finance/quoteSummary/' + symbol + '?modules=' + modules), { signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+// CAGR計算（負値・ゼロをはさむ場合はnullを返す）
+function calcCAGR(startVal, endVal, years) {
+  if (!startVal || !endVal || years <= 0) return null;
+  if (startVal <= 0 || endVal <= 0) return null;
+  return Math.pow(endVal / startVal, 1 / years) - 1;
+}
+
+// EPSリストから有効なCAGR年数を自動選択して計算
+function epsListToCAGR(epsList, targetYears) {
+  // epsList: [{year, eps}] 降順 or 昇順どちらでも可。yearで昇順ソート
+  var sorted = epsList.slice().sort(function(a,b){ return a.year - b.year; });
+  var valid = sorted.filter(function(d){ return d.eps != null && d.eps > 0; });
+  if (valid.length < 2) return null;
+  // 最古と最新でCAGR
+  var oldest = valid[0], newest = valid[valid.length - 1];
+  var yrs = newest.year - oldest.year;
+  if (yrs < 1) return null;
+  // targetYears以上あれば対象期間を絞る
+  if (targetYears && valid.length >= targetYears + 1) {
+    var cutIdx = valid.length - 1 - targetYears;
+    if (cutIdx >= 0) oldest = valid[cutIdx];
+    yrs = targetYears;
+  }
+  return calcCAGR(oldest.eps, newest.eps, yrs);
+}
+
+function estimateGrowthRates(earningsData) {
+  var result = { cagr3: null, cagr5: null, analyst: null, cagr3Desc: null, cagr5Desc: null, analystDesc: null };
+  if (!earningsData) return result;
+  var qs2 = earningsData.quoteSummary && earningsData.quoteSummary.result && earningsData.quoteSummary.result[0];
+  if (!qs2) return result;
+
+  // --- 過去EPS実績リスト (earningsHistory) ---
+  var eh = qs2.earningsHistory && qs2.earningsHistory.history;
+  var histEPS = [];
+  if (eh && eh.length) {
+    eh.forEach(function(h) {
+      var eps = h.epsActual && h.epsActual.raw;
+      var qdate = h.quarter && h.quarter.raw ? new Date(h.quarter.raw * 1000) : null;
+      if (eps != null && qdate) histEPS.push({ year: qdate.getFullYear() + qdate.getMonth() / 12, eps: eps });
+    });
+  }
+
+  // --- 年次損益計算書 (incomeStatementHistory) ---
+  var ish = qs2.incomeStatementHistory && qs2.incomeStatementHistory.incomeStatementHistory;
+  var annualEPS = [];
+  if (ish && ish.length) {
+    ish.forEach(function(s) {
+      // dilutedEps があれば使う
+      var eps = (s.dilutedEps && s.dilutedEps.raw) || null;
+      var endDate = s.endDate && s.endDate.raw ? new Date(s.endDate.raw * 1000) : null;
+      if (eps != null && endDate) annualEPS.push({ year: endDate.getFullYear(), eps: eps });
+    });
+  }
+
+  // 3年CAGR
+  if (annualEPS.length >= 2) {
+    var r3 = epsListToCAGR(annualEPS, 3);
+    if (r3 != null) {
+      result.cagr3 = r3;
+      var sorted3 = annualEPS.slice().sort(function(a,b){ return a.year - b.year; });
+      var v3 = sorted3.filter(function(d){ return d.eps > 0; });
+      if (v3.length >= 2) {
+        var n = v3.length;
+        result.cagr3Desc = v3[Math.max(0, n-4)].year + '〜' + v3[n-1].year + '年実績ベース';
+      }
+    }
+  }
+
+  // 5年CAGR（年次データ）
+  if (annualEPS.length >= 2) {
+    var r5 = epsListToCAGR(annualEPS, 5);
+    if (r5 != null) {
+      result.cagr5 = r5;
+      var sorted5 = annualEPS.slice().sort(function(a,b){ return a.year - b.year; });
+      var v5 = sorted5.filter(function(d){ return d.eps > 0; });
+      if (v5.length >= 2) {
+        result.cagr5Desc = v5[0].year + '〜' + v5[v5.length-1].year + '年実績ベース';
+      }
+    }
+  }
+
+  // フォールバック：四半期実績からCAGR
+  if (result.cagr3 == null && histEPS.length >= 4) {
+    result.cagr3 = epsListToCAGR(histEPS, 3);
+    if (result.cagr3 != null) result.cagr3Desc = '四半期実績データから推計';
+  }
+
+  // アナリスト予想成長率 (earningsTrend)
+  var et = qs2.earningsTrend && qs2.earningsTrend.trend;
+  if (et && et.length) {
+    // period "+5y" を優先、なければ "+1y" から換算
+    var t5y = null, t1y = null;
+    et.forEach(function(t) {
+      if (t.period === '+5y' && t.growth && t.growth.raw != null) t5y = t.growth.raw;
+      if (t.period === '+1y' && t.growth && t.growth.raw != null) t1y = t.growth.raw;
+    });
+    if (t5y != null) {
+      result.analyst = t5y;
+      result.analystDesc = 'アナリスト5年成長率予想（中央値）';
+    } else if (t1y != null) {
+      result.analyst = t1y;
+      result.analystDesc = 'アナリスト1年成長率予想（参考値）';
+    }
+  }
+
+  return result;
+}
+
+function applyGrowthRate(rate) {
+  var pct = Math.round(rate * 100);
+  // スライダーの範囲にクランプ
+  pct = Math.max(-10, Math.min(40, pct));
+  $('growth').value = pct;
+  $('growth-val').textContent = pct + '%';
+  closeEstimator();
+}
+
+function closeEstimator() {
+  $('est-popup').classList.remove('open');
+}
+
+function openEstimator() {
+  var popup = $('est-popup');
+  if (popup.classList.contains('open')) { closeEstimator(); return; }
+
+  var body = $('est-popup-body');
+
+  if (!_estData) {
+    // まだ推定データがない→即時「取得できません」
+    body.innerHTML = '<div class="est-loading">先に「計算する」を押してデータを取得してください。</div>';
+    popup.classList.add('open');
+    return;
+  }
+
+  // 推定値表示
+  var rates = estimateGrowthRates(_estData);
+  var rows = [
+    { key: 'cagr3',   label: '過去3年 EPS CAGR', desc: rates.cagr3Desc  || '年次損益データから計算',  val: rates.cagr3  },
+    { key: 'cagr5',   label: '過去5年 EPS CAGR', desc: rates.cagr5Desc  || '年次損益データから計算',  val: rates.cagr5  },
+    { key: 'analyst', label: 'アナリスト予想',    desc: rates.analystDesc || 'earningsTrend データ',   val: rates.analyst },
+  ];
+
+  body.innerHTML = '';
+  rows.forEach(function(row) {
+    var div = document.createElement('div');
+    var available = row.val != null;
+    div.className = 'est-option' + (available ? '' : ' unavailable');
+    var valPct = available ? Math.round(row.val * 100) : null;
+    div.innerHTML =
+      '<div class="est-opt-left">' +
+        '<div class="est-opt-label">' + row.label + '</div>' +
+        '<div class="est-opt-desc">' + row.desc + '</div>' +
+      '</div>' +
+      '<div class="est-opt-val' + (available ? '' : ' na') + '">' +
+        (available ? (valPct >= 0 ? '+' : '') + valPct + '%' : '取得不可') +
+      '</div>';
+    if (available) {
+      div.addEventListener('click', function() { applyGrowthRate(row.val); });
+    }
+    body.appendChild(div);
+  });
+
+  // 全部取得不可の場合の案内
+  if (!rates.cagr3 && !rates.cagr5 && !rates.analyst) {
+    var note = document.createElement('div');
+    note.className = 'est-loading';
+    note.style.borderTop = '1px solid var(--border)';
+    note.textContent = 'EPSの過去データが不足しているため推定できませんでした。手動入力をご利用ください。';
+    body.appendChild(note);
+  }
+
+  popup.classList.add('open');
+}
+
+// 外クリックで閉じる
+document.addEventListener('click', function(e) {
+  var popup = $('est-popup');
+  var wrap = document.querySelector('.growth-est-wrap');
+  if (popup && popup.classList.contains('open') && wrap && !wrap.contains(e.target)) {
+    closeEstimator();
+  }
+});
+
+// ===== メイン =====
+async function run() {
+  var code = $('code').value.trim();
+  if (!code) { showError('証券コードを入力してください'); return; }
+  if (/^\d{4}$/.test(code)) code += '.T';
+  var upperCode = code.toUpperCase();
+
+  var growthRate = parseFloat($('growth').value) / 100;
+  var years      = parseInt($('years').value);
+  var manualPER  = $('custom-per-chk').checked ? parseFloat($('custom-per').value) : null;
+  var manualEPS  = $('custom-eps-chk').checked ? parseFloat($('custom-eps').value) : null;
+
+  $('calc-btn').disabled = true;
+  showSpinner(true);
+
+  var name, currentPrice, closes, bps, eps, targetPER;
+  var usingMock = false;
+
+  try {
+    var results = await Promise.all([fetchChart(upperCode), fetchQuote(upperCode), fetchEarningsDetail(upperCode)]);
+    var chartData = results[0], quoteData = results[1], earningsData = results[2];
+    _estData = earningsData;  // 成長率推定に使用
+    var chart = chartData && chartData.chart && chartData.chart.result && chartData.chart.result[0];
+    if (!chart) throw new Error('no chart');
+    closes = chart.indicators && chart.indicators.quote && chart.indicators.quote[0] &&
+             chart.indicators.quote[0].close
+             ? chart.indicators.quote[0].close.filter(function(v){ return v != null; })
+             : [];
+    var meta = chart.meta || {};
+    var currPriceFromChart = meta.regularMarketPrice || closes[closes.length - 1];
+    var qs = quoteData && quoteData.quoteSummary && quoteData.quoteSummary.result && quoteData.quoteSummary.result[0]
+             ? quoteData.quoteSummary.result[0] : {};
+    var priceObj = qs.price || {};
+    var kstat    = qs.defaultKeyStatistics || {};
+    var summary  = qs.summaryDetail || {};
+    name         = (priceObj.longName && priceObj.longName.raw) || (priceObj.shortName && priceObj.shortName.raw) || upperCode;
+    currentPrice = (priceObj.regularMarketPrice && priceObj.regularMarketPrice.raw) || currPriceFromChart;
+    bps          = kstat.bookValue && kstat.bookValue.raw ? kstat.bookValue.raw : null;
+    eps = manualEPS ||
+          (kstat.forwardEps && kstat.forwardEps.raw)     ||
+          (kstat.trailingEps && kstat.trailingEps.raw)   ||
+          (priceObj.epsForward && priceObj.epsForward.raw) ||
+          (priceObj.epsCurrentYear && priceObj.epsCurrentYear.raw) || null;
+    if (!targetPER) {
+      var t = summary.trailingPE && summary.trailingPE.raw;
+      var f = (summary.forwardPE && summary.forwardPE.raw) || (kstat.forwardPE && kstat.forwardPE.raw);
+      var cands = [t, f].filter(function(v){ return v != null && v > 0 && v < 300; });
+      targetPER = manualPER || (cands.length ? cands.reduce(function(a,b){return a+b;},0)/cands.length : null);
+    }
+  } catch(e) {
+    var mock = getMockData(upperCode);
+    if (!mock) {
+      showSpinner(false);
+      showError('[' + upperCode + '] のデータを取得できませんでした。APIに接続できない環境では、対応銘柄（7203, 9984, 6758, 6861, 8306, AAPL, MSFT, NVDA）をお試しください。');
+      $('empty-state').style.display = 'none';
+      $('calc-btn').disabled = false;
+      return;
+    }
+    _estData = null;
+    $('est-btn').disabled = true;
+    $('est-btn').textContent = '成長率推定 — オフラインのため利用不可';
+    name = mock.name; currentPrice = mock.currentPrice; closes = mock.closes;
+    bps = mock.bps; eps = manualEPS || mock.eps;
+    targetPER = manualPER || (mock.trailingPE + mock.forwardPE) / 2;
+    usingMock = true;
+  }
+
+  var pbrResult = (bps && bps > 0 && closes.length >= 10) ? calcPBR(closes, bps, currentPrice) : null;
+  var perResult = (eps && targetPER) ? calcPER(eps, growthRate, years, targetPER, currentPrice) : null;
+
+  if (!pbrResult && !perResult) {
+    showSpinner(false);
+    showError('財務データ（BPS / EPS）を取得できませんでした。手動入力をONにして値を入力してください。');
+    $('empty-state').style.display = 'none';
+    $('calc-btn').disabled = false;
+    return;
+  }
+
+  showSpinner(false);
+  renderResults(name, upperCode, currentPrice, pbrResult, perResult, usingMock);
+  if (!usingMock) {
+    $('est-btn').disabled = false;
+    $('est-btn').textContent = '成長率を推定する（クリックして選択）';
+  }
+  $('calc-btn').disabled = false;
+}
+</script>
+</body>
+</html>
