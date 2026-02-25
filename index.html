@@ -1,3 +1,17 @@
+<!--
+  理論株価 Calculator
+  Version : 2.0.0
+  Date    : 2026-02-25
+  Author  : Yuki
+
+  修正履歴:
+    v1.0.0  2026-02-xx  初版（PBR/PER計算、モックデータ対応）
+    v1.1.0  2026-02-xx  Cloudflare Worker プロキシ導入、API接続対応
+    v1.2.0  2026-02-xx  EPS成長率推定機能追加（3年/5年CAGR、アナリスト予想）
+    v2.0.0  2026-02-25  Crumb認証対応Worker、BPS手動入力、
+                        チャート決算イベントによるEPS成長率フォールバック（日本株対応）、
+                        証券コード履歴のlocalStorage保存
+-->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -621,8 +635,9 @@
 
           <div class="field">
             <label>証券コード</label>
-            <input type="text" id="code" value="7203" placeholder="7203 / AAPL / 9984.T">
-            <small>日本株は4桁コードを入力。自動的に .T を付加します</small>
+            <input type="text" id="code" list="code-history" value="" placeholder="7203 / AAPL / 9984.T" autocomplete="off">
+            <datalist id="code-history"></datalist>
+            <small>日本株は4桁コードを入力。自動的に .T を付加します（過去の入力履歴から選択可）</small>
           </div>
 
           <hr class="divider">
@@ -992,6 +1007,44 @@ $('custom-bps-chk').addEventListener('change', function() { $('bps-field').class
 $('code').addEventListener('keydown', function(e) { if (e.key === 'Enter') run(); });
 $('calc-btn').addEventListener('click', run);
 
+// ===== 証券コード履歴（localStorage） =====
+var CODE_HISTORY_KEY = 'rikaron_code_history';
+var CODE_LAST_KEY    = 'rikaron_code_last';
+var CODE_HISTORY_MAX = 20;
+
+function loadCodeHistory() {
+  try { return JSON.parse(localStorage.getItem(CODE_HISTORY_KEY)) || []; }
+  catch(e) { return []; }
+}
+function saveCodeHistory(list) {
+  try { localStorage.setItem(CODE_HISTORY_KEY, JSON.stringify(list)); } catch(e) {}
+}
+function renderCodeDatalist() {
+  var dl = $('code-history');
+  dl.innerHTML = '';
+  loadCodeHistory().forEach(function(c) {
+    var opt = document.createElement('option');
+    opt.value = c;
+    dl.appendChild(opt);
+  });
+}
+function addCodeToHistory(code) {
+  if (!code) return;
+  var list = loadCodeHistory().filter(function(c) { return c !== code; });
+  list.unshift(code);
+  if (list.length > CODE_HISTORY_MAX) list = list.slice(0, CODE_HISTORY_MAX);
+  saveCodeHistory(list);
+  renderCodeDatalist();
+  try { localStorage.setItem(CODE_LAST_KEY, code); } catch(e) {}
+}
+// 初期化: 前回の入力を復元 & datalist を描画
+(function() {
+  var last = '';
+  try { last = localStorage.getItem(CODE_LAST_KEY) || ''; } catch(e) {}
+  if (last) $('code').value = last;
+  renderCodeDatalist();
+})();
+
 // ===== Yahoo Finance API =====
 function yahooUrl(path) {
   return 'https://yahoo-proxy.yuki-mats.workers.dev/?url=' + encodeURIComponent('https://query1.finance.yahoo.com' + path);
@@ -1206,11 +1259,19 @@ function showError(msg) {
 
 // ===== 成長率推定 =====
 var _estData = null;   // 推定計算用データを保持
+var _chartEarningsData = null;  // チャート決算イベントデータ
 
 // earningsHistory + incomeStatementHistory + earningsTrend + earnings + financialData を取得
 async function fetchEarningsDetail(symbol) {
   var modules = 'earningsHistory,incomeStatementHistory,earningsTrend,earnings,financialData';
   var res = await fetch(yahooUrl('/v10/finance/quoteSummary/' + symbol + '?modules=' + modules), { signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+// チャートの決算イベントからEPSを取得（quoteSummaryが空の日本株向けフォールバック）
+async function fetchChartEarnings(symbol) {
+  var res = await fetch(yahooUrl('/v8/finance/chart/' + symbol + '?interval=3mo&range=5y&events=earnings'), { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
 }
@@ -1374,6 +1435,66 @@ function estimateGrowthRates(earningsData) {
     }
   }
 
+  // --- 最終フォールバック: チャート決算イベントデータ（日本株対応） ---
+  if ((result.cagr3 == null || result.cagr5 == null || result.analyst == null) && _chartEarningsData) {
+    var chartResult = _chartEarningsData.chart && _chartEarningsData.chart.result && _chartEarningsData.chart.result[0];
+    var evObj = chartResult && chartResult.events && chartResult.events.earnings;
+    if (evObj) {
+      // 四半期EPSを時系列で収集
+      var qEps = [];
+      Object.keys(evObj).forEach(function(key) {
+        var ev = evObj[key];
+        var actual = ev.actual && ev.actual.raw;
+        if (actual != null && ev.date) {
+          var d = new Date(ev.date * 1000);
+          qEps.push({ date: d, eps: actual });
+        }
+      });
+      qEps.sort(function(a, b) { return a.date - b.date; });
+
+      // trailing 4四半期合計で年間EPSを生成（決算期ズレに対応）
+      if (qEps.length >= 4) {
+        var trailingAnnual = [];
+        for (var ti = 3; ti < qEps.length; ti++) {
+          var tSum = 0;
+          for (var tj = ti - 3; tj <= ti; tj++) tSum += qEps[tj].eps;
+          if (tSum > 0) {
+            var tDate = qEps[ti].date;
+            trailingAnnual.push({ year: tDate.getFullYear() + tDate.getMonth() / 12, eps: tSum });
+          }
+        }
+
+        if (trailingAnnual.length >= 2) {
+          if (result.cagr3 == null) {
+            var cr3 = epsListToCAGR(trailingAnnual, 3);
+            if (cr3 != null) {
+              result.cagr3 = cr3;
+              var ys3 = trailingAnnual.slice().sort(function(a,b){ return a.year - b.year; });
+              result.cagr3Desc = Math.floor(ys3[Math.max(0, ys3.length-4)].year) + '〜' + Math.floor(ys3[ys3.length-1].year) + '年 チャート決算イベント';
+            }
+          }
+          if (result.cagr5 == null) {
+            var cr5 = epsListToCAGR(trailingAnnual, 5);
+            if (cr5 != null) {
+              result.cagr5 = cr5;
+              var ys5 = trailingAnnual.slice().sort(function(a,b){ return a.year - b.year; });
+              result.cagr5Desc = Math.floor(ys5[0].year) + '〜' + Math.floor(ys5[ys5.length-1].year) + '年 チャート決算イベント';
+            }
+          }
+          // 直近YoY成長率をアナリスト代替に
+          if (result.analyst == null && trailingAnnual.length >= 2) {
+            var srt = trailingAnnual.slice().sort(function(a,b){ return a.year - b.year; });
+            var li = srt.length - 1;
+            if (srt[li].eps > 0 && srt[li - 1].eps > 0) {
+              result.analyst = (srt[li].eps / srt[li - 1].eps) - 1;
+              result.analystDesc = Math.floor(srt[li - 1].year) + '→' + Math.floor(srt[li].year) + '年 実績EPS成長率';
+            }
+          }
+        }
+      }
+    }
+  }
+
   return result;
 }
 
@@ -1396,15 +1517,15 @@ function openEstimator() {
 
   var body = $('est-popup-body');
 
-  if (!_estData) {
+  if (!_estData && !_chartEarningsData) {
     // まだ推定データがない→即時「取得できません」
     body.innerHTML = '<div class="est-loading">先に「計算する」を押してデータを取得してください。</div>';
     popup.classList.add('open');
     return;
   }
 
-  // 推定値表示
-  var rates = estimateGrowthRates(_estData);
+  // 推定値表示（_estDataがnullでも_chartEarningsDataがあれば空オブジェクトで呼ぶ）
+  var rates = estimateGrowthRates(_estData || { quoteSummary: { result: [{}] } });
   var rows = [
     { key: 'cagr3',   label: '過去3年 EPS CAGR', desc: rates.cagr3Desc  || '年次損益データから計算',  val: rates.cagr3  },
     { key: 'cagr5',   label: '過去5年 EPS CAGR', desc: rates.cagr5Desc  || '年次損益データから計算',  val: rates.cagr5  },
@@ -1458,6 +1579,7 @@ async function run() {
   if (!code) { showError('証券コードを入力してください'); return; }
   if (/^\d{4}$/.test(code)) code += '.T';
   var upperCode = code.toUpperCase();
+  addCodeToHistory(upperCode);
 
   var growthRate = parseFloat($('growth').value) / 100;
   var years      = parseInt($('years').value);
@@ -1520,9 +1642,13 @@ async function run() {
 
     // --- Step 3: Earnings detail (may fail) ---
     _estData = null;
+    _chartEarningsData = null;
     try {
       _estData = await fetchEarningsDetail(upperCode);
     } catch(e) { /* earnings failed */ }
+    try {
+      _chartEarningsData = await fetchChartEarnings(upperCode);
+    } catch(e) { /* chart earnings failed */ }
 
     // --- Step 4: Extract fundamentals ---
     if (quoteResult) {
@@ -1571,7 +1697,7 @@ async function run() {
   showSpinner(false);
   renderResults(name, upperCode, currentPrice, pbrResult, perResult, usingMock, apiPartial);
 
-  if (!usingMock && _estData) {
+  if (!usingMock && (_estData || _chartEarningsData)) {
     $('est-btn').disabled = false;
     $('est-btn').textContent = '成長率を推定する（クリックして選択）';
   } else if (!usingMock) {
