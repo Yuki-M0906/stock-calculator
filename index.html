@@ -1,6 +1,6 @@
 <!--
   理論株価 Calculator
-  Version : 2.0.0
+  Version : 2.1.0
   Date    : 2026-02-25
   Author  : Yuki
 
@@ -11,6 +11,9 @@
     v2.0.0  2026-02-25  Crumb認証対応Worker、BPS手動入力、
                         チャート決算イベントによるEPS成長率フォールバック（日本株対応）、
                         証券コード履歴のlocalStorage保存
+    v2.1.0  2026-02-25  日本株EPS成長率の取得不可を修正
+                        - incomeStatementHistory: netIncomeフォールバック追加
+                        - earningsTrend: earningsEstimate.growth参照パス追加
 -->
 <!DOCTYPE html>
 <html lang="ja">
@@ -1324,11 +1327,20 @@ function estimateGrowthRates(earningsData) {
   var annualEPS = [];
   if (ish && ish.length) {
     ish.forEach(function(s) {
-      // dilutedEps > basicEps > netIncome の順にフォールバック
       var eps = (s.dilutedEps && s.dilutedEps.raw) ||
                 (s.basicEps && s.basicEps.raw) || null;
       var endDate = s.endDate && s.endDate.raw ? new Date(s.endDate.raw * 1000) : null;
       if (eps != null && endDate) annualEPS.push({ year: endDate.getFullYear(), eps: eps });
+    });
+  }
+
+  // --- フォールバック: netIncome（日本株はEPSが空でもnetIncomeがある） ---
+  if (annualEPS.length < 2 && ish && ish.length) {
+    annualEPS = [];
+    ish.forEach(function(s) {
+      var ni = s.netIncome && s.netIncome.raw;
+      var endDate = s.endDate && s.endDate.raw ? new Date(s.endDate.raw * 1000) : null;
+      if (ni != null && ni > 0 && endDate) annualEPS.push({ year: endDate.getFullYear(), eps: ni });
     });
   }
 
@@ -1409,10 +1421,14 @@ function estimateGrowthRates(earningsData) {
   var et = qs2.earningsTrend && qs2.earningsTrend.trend;
   if (et && et.length) {
     // period "+5y" を優先、なければ "+1y" から換算
+    // growth は t.growth.raw または t.earningsEstimate.growth.raw を参照（日本株は後者のみ）
     var t5y = null, t1y = null;
     et.forEach(function(t) {
-      if (t.period === '+5y' && t.growth && t.growth.raw != null) t5y = t.growth.raw;
-      if (t.period === '+1y' && t.growth && t.growth.raw != null) t1y = t.growth.raw;
+      var g = (t.growth && t.growth.raw != null) ? t.growth.raw
+            : (t.earningsEstimate && t.earningsEstimate.growth && t.earningsEstimate.growth.raw != null) ? t.earningsEstimate.growth.raw
+            : null;
+      if (t.period === '+5y' && g != null) t5y = g;
+      if (t.period === '+1y' && g != null) t1y = g;
     });
     if (t5y != null) {
       result.analyst = t5y;
