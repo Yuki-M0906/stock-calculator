@@ -681,6 +681,18 @@
             </div>
           </div>
 
+          <label class="toggle-row" for="custom-bps-chk">
+            <input type="checkbox" id="custom-bps-chk">
+            <span class="toggle"></span>
+            <span class="toggle-label">BPS（1株純資産）を手動入力</span>
+          </label>
+          <div class="extra-field" id="bps-field">
+            <div class="field">
+              <label>BPS（円 / ドル）</label>
+              <input type="number" id="custom-bps" value="1000" min="0.01" step="1">
+            </div>
+          </div>
+
           <hr class="divider">
 
           <button class="btn-calc" id="calc-btn">計算する</button>
@@ -900,7 +912,7 @@
             </tr>
             <tr>
               <td>PBR基準が表示されない</td>
-              <td>BPS（1株純資産）データが取得できなかった場合に発生します。特に米国株では取得できないことがあります。その場合はPER基準のみをご参照ください。</td>
+              <td>BPS（1株純資産）データが取得できなかった場合に発生します。「BPSを手動入力」をONにして、決算資料等から1株純資産を入力してください。特に米国株や財務APIが認証エラーになった場合に発生します。</td>
             </tr>
             <tr>
               <td>PER基準が表示されない</td>
@@ -917,6 +929,10 @@
             <tr>
               <td>「DEMO」と表示されている</td>
               <td>リアルタイムAPIに接続できない環境（プレビュー等）で、内蔵のサンプルデータを使って表示しています。参考値として確認できますが実際の株価・財務データとは異なります。</td>
+            </tr>
+            <tr>
+              <td>「財務データAPIの取得に失敗」と出る</td>
+              <td>株価チャートは取得できているが、BPS/EPS/PER等の財務データAPIが認証エラー（401）で取得できない状態です。Cloudflare Workerのcrumb認証を更新するか、BPS・EPS・PERを手動入力してご利用ください。</td>
             </tr>
           </table>
         </div>
@@ -972,6 +988,7 @@ $('growth').addEventListener('input', function() { $('growth-val').textContent =
 $('years').addEventListener('input',  function() { $('years-val').textContent  = this.value + '年後'; });
 $('custom-per-chk').addEventListener('change', function() { $('per-field').classList.toggle('show', this.checked); });
 $('custom-eps-chk').addEventListener('change', function() { $('eps-field').classList.toggle('show', this.checked); });
+$('custom-bps-chk').addEventListener('change', function() { $('bps-field').classList.toggle('show', this.checked); });
 $('code').addEventListener('keydown', function(e) { if (e.key === 'Enter') run(); });
 $('calc-btn').addEventListener('click', run);
 
@@ -1055,15 +1072,25 @@ function diffClass(pct) {
   return 'diff-flat';
 }
 
-function renderResults(name, symbol, currentPrice, pbr, per, usingMock) {
+function renderResults(name, symbol, currentPrice, pbr, per, usingMock, apiPartial) {
   var r = $('results');
   r.innerHTML = '';
+  $('empty-state').style.display = 'none';
 
   if (usingMock) {
     var b = document.createElement('div');
     b.className = 'toast info show';
     b.textContent = '[デモ] APIに接続できない環境のため、サンプルデータを表示しています。ローカルのHTMLファイルをブラウザで開くとリアルタイムデータを取得できます。';
     r.appendChild(b);
+  }
+
+  if (apiPartial) {
+    var bp = document.createElement('div');
+    bp.className = 'toast info show';
+    bp.innerHTML = '財務データAPI（BPS/EPS/PER）の取得に失敗しました（Yahoo Finance認証エラー）。株価チャートは正常に取得できています。<br>' +
+      'PBR基準：左パネルの「BPSを手動入力」をONにしてください。<br>' +
+      'PER基準：「EPSを手動入力」と「PERを手動入力」をONにしてください。';
+    r.appendChild(bp);
   }
 
   // ティッカーバー
@@ -1114,7 +1141,7 @@ function renderResults(name, symbol, currentPrice, pbr, per, usingMock) {
         '</div>' +
       '</div>';
     r.appendChild(card);
-  } else {
+  } else if (!apiPartial) {
     var w1 = document.createElement('div');
     w1.className = 'toast info show';
     w1.textContent = 'PBR基準：BPSデータを取得できませんでした（米国株は取得できない場合があります）';
@@ -1151,7 +1178,7 @@ function renderResults(name, symbol, currentPrice, pbr, per, usingMock) {
         '</div>' +
       '</div>';
     r.appendChild(card2);
-  } else {
+  } else if (!apiPartial) {
     var w2 = document.createElement('div');
     w2.className = 'toast info show';
     w2.textContent = 'PER基準：EPSデータを取得できませんでした。手動入力をONにして基準EPSを入力してください。';
@@ -1164,8 +1191,11 @@ function renderResults(name, symbol, currentPrice, pbr, per, usingMock) {
 // ===== 表示制御 =====
 function showSpinner(v) {
   $('spinner').classList.toggle('show', v);
-  $('empty-state').style.display = v ? 'none' : '';
-  if (v) { $('results').style.display = 'none'; $('toast-error').classList.remove('show'); }
+  if (v) {
+    $('empty-state').style.display = 'none';
+    $('results').style.display = 'none';
+    $('toast-error').classList.remove('show');
+  }
 }
 function showError(msg) {
   $('toast-error').textContent = msg;
@@ -1380,17 +1410,19 @@ async function run() {
   var years      = parseInt($('years').value);
   var manualPER  = $('custom-per-chk').checked ? parseFloat($('custom-per').value) : null;
   var manualEPS  = $('custom-eps-chk').checked ? parseFloat($('custom-eps').value) : null;
+  var manualBPS  = $('custom-bps-chk').checked ? parseFloat($('custom-bps').value) : null;
 
   $('calc-btn').disabled = true;
   showSpinner(true);
 
   var name, currentPrice, closes, bps, eps, targetPER;
   var usingMock = false;
+  var apiPartial = false;
 
+  // --- Step 1: Chart (primary, reliable) ---
+  var chartOk = false;
   try {
-    var results = await Promise.all([fetchChart(upperCode), fetchQuote(upperCode), fetchEarningsDetail(upperCode)]);
-    var chartData = results[0], quoteData = results[1], earningsData = results[2];
-    _estData = earningsData;  // 成長率推定に使用
+    var chartData = await fetchChart(upperCode);
     var chart = chartData && chartData.chart && chartData.chart.result && chartData.chart.result[0];
     if (!chart) throw new Error('no chart');
     closes = chart.indicators && chart.indicators.quote && chart.indicators.quote[0] &&
@@ -1398,27 +1430,15 @@ async function run() {
              ? chart.indicators.quote[0].close.filter(function(v){ return v != null; })
              : [];
     var meta = chart.meta || {};
-    var currPriceFromChart = meta.regularMarketPrice || closes[closes.length - 1];
-    var qs = quoteData && quoteData.quoteSummary && quoteData.quoteSummary.result && quoteData.quoteSummary.result[0]
-             ? quoteData.quoteSummary.result[0] : {};
-    var priceObj = qs.price || {};
-    var kstat    = qs.defaultKeyStatistics || {};
-    var summary  = qs.summaryDetail || {};
-    name         = (priceObj.longName && priceObj.longName.raw) || (priceObj.shortName && priceObj.shortName.raw) || upperCode;
-    currentPrice = (priceObj.regularMarketPrice && priceObj.regularMarketPrice.raw) || currPriceFromChart;
-    bps          = kstat.bookValue && kstat.bookValue.raw ? kstat.bookValue.raw : null;
-    eps = manualEPS ||
-          (kstat.forwardEps && kstat.forwardEps.raw)     ||
-          (kstat.trailingEps && kstat.trailingEps.raw)   ||
-          (priceObj.epsForward && priceObj.epsForward.raw) ||
-          (priceObj.epsCurrentYear && priceObj.epsCurrentYear.raw) || null;
-    if (!targetPER) {
-      var t = summary.trailingPE && summary.trailingPE.raw;
-      var f = (summary.forwardPE && summary.forwardPE.raw) || (kstat.forwardPE && kstat.forwardPE.raw);
-      var cands = [t, f].filter(function(v){ return v != null && v > 0 && v < 300; });
-      targetPER = manualPER || (cands.length ? cands.reduce(function(a,b){return a+b;},0)/cands.length : null);
-    }
+    currentPrice = meta.regularMarketPrice || (closes.length ? closes[closes.length - 1] : null);
+    name = meta.shortName || meta.longName || upperCode;
+    chartOk = true;
   } catch(e) {
+    // Chart failed
+  }
+
+  // Chart failed -> mock fallback
+  if (!chartOk) {
     var mock = getMockData(upperCode);
     if (!mock) {
       showSpinner(false);
@@ -1429,17 +1449,65 @@ async function run() {
     }
     _estData = null;
     $('est-btn').disabled = true;
-    $('est-btn').textContent = '成長率推定 — オフラインのため利用不可';
+    $('est-btn').textContent = '成長率推定 -- オフラインのため利用不可';
     name = mock.name; currentPrice = mock.currentPrice; closes = mock.closes;
-    bps = mock.bps; eps = manualEPS || mock.eps;
+    bps = manualBPS || mock.bps; eps = manualEPS || mock.eps;
     targetPER = manualPER || (mock.trailingPE + mock.forwardPE) / 2;
     usingMock = true;
   }
 
+  // --- Step 2: QuoteSummary (may fail with 401) ---
+  if (chartOk) {
+    var quoteResult = null;
+    try {
+      var quoteData = await fetchQuote(upperCode);
+      var qs = quoteData && quoteData.quoteSummary && quoteData.quoteSummary.result && quoteData.quoteSummary.result[0];
+      quoteResult = qs || null;
+    } catch(e) { /* quoteSummary failed */ }
+
+    // --- Step 3: Earnings detail (may fail) ---
+    _estData = null;
+    try {
+      _estData = await fetchEarningsDetail(upperCode);
+    } catch(e) { /* earnings failed */ }
+
+    // --- Step 4: Extract fundamentals ---
+    if (quoteResult) {
+      var priceObj = quoteResult.price || {};
+      var kstat    = quoteResult.defaultKeyStatistics || {};
+      var summary  = quoteResult.summaryDetail || {};
+
+      var qName = (priceObj.longName && priceObj.longName.raw) || (priceObj.shortName && priceObj.shortName.raw);
+      if (qName) name = qName;
+      if (priceObj.regularMarketPrice && priceObj.regularMarketPrice.raw) {
+        currentPrice = priceObj.regularMarketPrice.raw;
+      }
+
+      bps = manualBPS || (kstat.bookValue && kstat.bookValue.raw ? kstat.bookValue.raw : null);
+      eps = manualEPS ||
+            (kstat.forwardEps && kstat.forwardEps.raw)     ||
+            (kstat.trailingEps && kstat.trailingEps.raw)   ||
+            (priceObj.epsForward && priceObj.epsForward.raw) ||
+            (priceObj.epsCurrentYear && priceObj.epsCurrentYear.raw) || null;
+
+      var t = summary.trailingPE && summary.trailingPE.raw;
+      var f = (summary.forwardPE && summary.forwardPE.raw) || (kstat.forwardPE && kstat.forwardPE.raw);
+      var cands = [t, f].filter(function(v){ return v != null && v > 0 && v < 300; });
+      targetPER = manualPER || (cands.length ? cands.reduce(function(a,b){return a+b;},0)/cands.length : null);
+    } else {
+      // quoteSummary failed - use manual inputs only
+      apiPartial = true;
+      bps = manualBPS || null;
+      eps = manualEPS || null;
+      targetPER = manualPER || null;
+    }
+  }
+
+  // --- Step 5: Calculate ---
   var pbrResult = (bps && bps > 0 && closes.length >= 10) ? calcPBR(closes, bps, currentPrice) : null;
   var perResult = (eps && targetPER) ? calcPER(eps, growthRate, years, targetPER, currentPrice) : null;
 
-  if (!pbrResult && !perResult) {
+  if (!pbrResult && !perResult && !apiPartial) {
     showSpinner(false);
     showError('財務データ（BPS / EPS）を取得できませんでした。手動入力をONにして値を入力してください。');
     $('empty-state').style.display = 'none';
@@ -1448,10 +1516,14 @@ async function run() {
   }
 
   showSpinner(false);
-  renderResults(name, upperCode, currentPrice, pbrResult, perResult, usingMock);
-  if (!usingMock) {
+  renderResults(name, upperCode, currentPrice, pbrResult, perResult, usingMock, apiPartial);
+
+  if (!usingMock && _estData) {
     $('est-btn').disabled = false;
     $('est-btn').textContent = '成長率を推定する（クリックして選択）';
+  } else if (!usingMock) {
+    $('est-btn').disabled = true;
+    $('est-btn').textContent = '成長率推定 -- 財務データ未取得';
   }
   $('calc-btn').disabled = false;
 }
