@@ -977,7 +977,7 @@ $('calc-btn').addEventListener('click', run);
 
 // ===== Yahoo Finance API =====
 function yahooUrl(path) {
-  return 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://query1.finance.yahoo.com' + path);
+  return 'https://yahoo-proxy.yuki-mats.workers.dev/?url=' + encodeURIComponent('https://query1.finance.yahoo.com' + path);
 }
 async function fetchChart(symbol) {
   var res = await fetch(yahooUrl('/v8/finance/chart/' + symbol + '?interval=1d&range=6mo'), { signal: AbortSignal.timeout(8000) });
